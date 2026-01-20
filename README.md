@@ -31,9 +31,19 @@ uv pip install ft-hubspot-workflow-backup
 uv run workflows-backup
 ```
 
-Creates `workflows_backup/<timestamp>/` with:
-- One JSON file per workflow: `<timestamp>_<slugified-name>.json`
-- An `index.json` listing all backed up flows
+Creates `snapshots/` with:
+- One JSON file per workflow: `<slugified-name>.json`
+- An `_index.json` listing all backed up flows
+
+Options:
+- `-o, --output-dir <path>`: Custom output directory (default: `./snapshots/`)
+- `--use-date-dir`: Create a timestamped subdirectory (e.g., `snapshots/2026_01_20_123456/`)
+- `--use-date-prefix`: Prefix filenames with timestamp (e.g., `2026_01_20_123456_workflow-name.json`)
+
+Example with date organization:
+```bash
+uv run workflows-backup --use-date-dir --use-date-prefix
+```
 
 ### Restore a workflow
 
@@ -48,7 +58,7 @@ Options:
 
 Example:
 ```bash
-uv run workflows-restore workflows_backup/<timestamp>/<timestamp>_<workflow-name>.json --dry
+uv run workflows-restore snapshots/<workflow-name>.json --dry
 ```
 
 ### As a Python module
@@ -57,11 +67,14 @@ uv run workflows-restore workflows_backup/<timestamp>/<timestamp>_<workflow-name
 from ft_hubspot_workflow_backup import backup_all_flows, restore_flow, HubSpotClient
 
 # Backup (uses HUBSPOT_AUTOMATION_TOKEN env var)
-backup_dir = backup_all_flows()
+snapshot_dir = backup_all_flows()
 
-# Or with explicit token
+# With date-based organization
+snapshot_dir = backup_all_flows(use_date_dir=True, use_date_prefix=True)
+
+# Or with explicit token and custom output
 client = HubSpotClient(token="your-token")
-backup_dir = backup_all_flows(client=client)
+snapshot_dir = backup_all_flows(client=client, output_dir="./my-snapshots")
 
 # Restore
 restore_flow("path/to/backup.json", flow_id="123456")

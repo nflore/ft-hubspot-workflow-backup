@@ -1,3 +1,4 @@
+import argparse
 import json
 import re
 import sys
@@ -47,17 +48,21 @@ def backup_all_flows(
     token: Optional[str] = None,
     output_dir: Optional[Union[str, Path]] = None,
     client: Optional[HubSpotClient] = None,
+    use_date_dir: bool = False,
+    use_date_prefix: bool = False,
 ) -> Path:
     """
     Backup all HubSpot automation flows to JSON files.
 
     Args:
         token: HubSpot token. Falls back to HUBSPOT_AUTOMATION_TOKEN env var.
-        output_dir: Directory for backups. Defaults to ./workflows_backup/.
+        output_dir: Directory for snapshots. Defaults to ./snapshots/.
         client: Pre-configured HubSpotClient instance.
+        use_date_dir: If True, create a timestamped subdirectory for this run.
+        use_date_prefix: If True, prefix each workflow filename with timestamp.
 
     Returns:
-        Path to the created backup directory.
+        Path to the created snapshot directory.
     """
     if client is None:
         client = HubSpotClient(token=token)
@@ -65,11 +70,14 @@ def backup_all_flows(
     timestamp = get_timestamp()
 
     if output_dir is None:
-        output_dir = Path.cwd() / "workflows_backup"
+        output_dir = Path.cwd() / "snapshots"
     else:
         output_dir = Path(output_dir)
 
-    run_dir = output_dir / timestamp
+    if use_date_dir:
+        run_dir = output_dir / timestamp
+    else:
+        run_dir = output_dir
     run_dir.mkdir(parents=True, exist_ok=True)
 
     flows = client.list_flows()
@@ -89,7 +97,10 @@ def backup_all_flows(
         except requests.exceptions.HTTPError:
             continue
 
-        filename = f"{timestamp}_{slug}.json"
+        if use_date_prefix:
+            filename = f"{timestamp}_{slug}.json"
+        else:
+            filename = f"{slug}.json"
         filepath = run_dir / filename
 
         with filepath.open("w", encoding="utf-8") as f:
@@ -104,7 +115,7 @@ def backup_all_flows(
             "type": details.get("type"),
         })
 
-    index_path = run_dir / "index.json"
+    index_path = run_dir / "_index.json"
     with index_path.open("w", encoding="utf-8") as f:
         json.dump({
             "timestamp": timestamp,
@@ -116,6 +127,27 @@ def backup_all_flows(
 
 def main() -> None:
     """CLI entry point for workflows-backup command."""
+    parser = argparse.ArgumentParser(
+        description="Backup HubSpot automation workflows to JSON files."
+    )
+    parser.add_argument(
+        "-o", "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for snapshots (default: ./snapshots/)"
+    )
+    parser.add_argument(
+        "--use-date-dir",
+        action="store_true",
+        help="Create a timestamped subdirectory for this backup run"
+    )
+    parser.add_argument(
+        "--use-date-prefix",
+        action="store_true",
+        help="Prefix each workflow filename with a timestamp"
+    )
+    args = parser.parse_args()
+
     try:
         client = HubSpotClient()
     except ValueError as e:
@@ -134,7 +166,12 @@ def main() -> None:
         print(f"{flow.get('id')}: {flow.get('name')}")
 
     print("\nBacking up flows...")
-    run_dir = backup_all_flows(client=client)
+    run_dir = backup_all_flows(
+        client=client,
+        output_dir=args.output_dir,
+        use_date_dir=args.use_date_dir,
+        use_date_prefix=args.use_date_prefix,
+    )
 
     print(f"\nBackup complete.")
     print(f"Files saved to: {run_dir}")

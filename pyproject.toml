@@ -1,0 +1,25 @@
+[project]
+name = "ft-hubspot-workflow-backup"
+version = "0.1.0"
+description = "Backup and restore HubSpot Automation (v4) workflows"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Nathan Flore" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.25.0",
+]
+
+[project.scripts]
+workflows-backup = "ft_hubspot_workflow_backup.backup:main"
+workflows-restore = "ft_hubspot_workflow_backup.restore:main"
+
+[project.urls]
+Homepage = "https://github.com/nflore/ft-hubspot-workflow-backup"
+Repository = "https://github.com/nflore/ft-hubspot-workflow-backup"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

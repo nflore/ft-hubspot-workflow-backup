@@ -1,6 +1,6 @@
 [project]
 name = "ft-hubspot-workflow-backup"
-version = "0.1.1"
+version = "0.1.2"
 description = "Backup and restore HubSpot Automation (v4) workflows"
 readme = "README.md"
 license = "MIT"
@@ -19,6 +19,8 @@ workflows-restore = "ft_hubspot_workflow_backup.restore:main"
 [project.urls]
 Homepage = "https://github.com/nflore/ft-hubspot-workflow-backup"
 Repository = "https://github.com/nflore/ft-hubspot-workflow-backup"
+Issues = "https://github.com/nflore/ft-hubspot-workflow-backup/issues"
+Changelog = "https://github.com/nflore/ft-hubspot-workflow-backup/releases"
 
 [build-system]
 requires = ["hatchling"]

@@ -33,12 +33,13 @@ uv run workflows-backup
 
 Creates `snapshots/` with:
 - One JSON file per workflow: `<slugified-name>.json`
-- An `_index.json` listing all backed up flows
+- An `_index.json` listing all backed up flows with SHA-256 hashes for verification
 
 Options:
 - `-o, --output-dir <path>`: Custom output directory (default: `./snapshots/`)
 - `--use-date-dir`: Create a timestamped subdirectory (e.g., `snapshots/2026_01_20_123456/`)
 - `--use-date-prefix`: Prefix filenames with timestamp (e.g., `2026_01_20_123456_workflow-name.json`)
+- `--verify`: Verify backup integrity immediately after completion
 
 Example with date organization:
 ```bash
@@ -64,7 +65,7 @@ uv run workflows-restore snapshots/<workflow-name>.json --dry
 ### As a Python module
 
 ```python
-from ft_hubspot_workflow_backup import backup_all_flows, restore_flow, HubSpotClient
+from ft_hubspot_workflow_backup import backup_all_flows, restore_flow, verify_backups, HubSpotClient
 
 # Backup (uses HUBSPOT_AUTOMATION_TOKEN env var)
 snapshot_dir = backup_all_flows()
@@ -76,8 +77,54 @@ snapshot_dir = backup_all_flows(use_date_dir=True, use_date_prefix=True)
 client = HubSpotClient(token="your-token")
 snapshot_dir = backup_all_flows(client=client, output_dir="./my-snapshots")
 
+# Verify backups
+results = verify_backups("./my-snapshots")
+print(f"Verified: {len(results['verified'])}, Failed: {len(results['failed'])}")
+
 # Restore
 restore_flow("path/to/backup.json", flow_id="123456")
+```
+
+## Cryptographic Verification
+
+Each backup includes SHA-256 hashes in `_index.json` to cryptographically verify workflow integrity. This allows you to detect if a workflow file has been modified since backup.
+
+### Verify a single workflow
+
+```bash
+# Compare the stored hash with the actual file hash
+shasum -a 256 snapshots/<workflow-name>.json
+# Then compare with the hash in _index.json
+```
+
+### Verify all workflows (bash)
+
+```bash
+cd snapshots
+for file in *.json; do
+  [[ "$file" == "_index.json" ]] && continue
+  expected=$(jq -r ".flows[] | select(.filename == \"$file\") | .hash" _index.json)
+  actual=$(shasum -a 256 "$file" | cut -d' ' -f1)
+  if [[ "$expected" == "$actual" ]]; then
+    echo "✓ $file"
+  else
+    echo "✗ $file (hash mismatch)"
+  fi
+done
+```
+
+### Verify programmatically (Python)
+
+```python
+from ft_hubspot_workflow_backup import verify_backups
+
+results = verify_backups("snapshots")
+print(f"Verified: {len(results['verified'])}, Failed: {len(results['failed'])}")
+
+if results["failed"]:
+    print("Hash mismatches:", results["failed"])
+if results["missing"]:
+    print("Missing files:", results["missing"])
 ```
 
 ## Notes

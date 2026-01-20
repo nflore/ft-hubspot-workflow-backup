@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -9,6 +10,67 @@ from typing import Optional, Union
 import requests
 
 from .client import HubSpotClient
+
+
+def get_filter_sort_key(f: dict) -> tuple:
+    """Get a sort key for a filter based on property, type, and value."""
+    operation = f.get("operation", {})
+    op_value = operation.get("value", "") or str(operation.get("values", []))
+    return (
+        f.get("property", ""),
+        f.get("filterType", ""),
+        op_value,
+    )
+
+
+def get_filter_branch_sort_key(branch: dict) -> tuple:
+    """Get a sort key for a filter branch based on its first filter."""
+    filters = branch.get("filters", [])
+    if filters:
+        first_filter = filters[0]
+        operation = first_filter.get("operation", {})
+        op_value = operation.get("value", "") or str(operation.get("values", []))
+        return (
+            first_filter.get("property", ""),
+            first_filter.get("filterType", ""),
+            op_value,
+        )
+    return ("", "", "")
+
+
+def sort_filters(obj: dict | list) -> dict | list:
+    """Recursively sort filters and filter branches for consistent output."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "filters" and isinstance(value, list):
+                obj[key] = sorted(value, key=get_filter_sort_key)
+            elif key == "reEnrollmentTriggersFilterBranches" and isinstance(
+                value, list
+            ):
+                for branch in value:
+                    sort_filters(branch)
+                obj[key] = sorted(value, key=get_filter_branch_sort_key)
+            else:
+                sort_filters(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            sort_filters(item)
+    return obj
+
+
+def normalize_flow(flow: dict) -> dict:
+    """Normalize flow data for consistent serialization."""
+    if "dataSources" in flow and isinstance(flow["dataSources"], list):
+        flow["dataSources"] = sorted(
+            flow["dataSources"],
+            key=lambda ds: (
+                ds.get("objectTypeId", ""),
+                ds.get("associationTypeId", 0),
+                ds.get("name", ""),
+            ),
+        )
+    sort_filters(flow)
+    return flow
 
 
 def slugify(name: str, max_length: int = 80) -> str:
@@ -97,6 +159,8 @@ def backup_all_flows(
         except requests.exceptions.HTTPError:
             continue
 
+        details = normalize_flow(details)
+
         if use_date_prefix:
             filename = f"{timestamp}_{slug}.json"
         else:
@@ -104,7 +168,7 @@ def backup_all_flows(
         filepath = run_dir / filename
 
         with filepath.open("w", encoding="utf-8") as f:
-            json.dump(details, f, indent=2)
+            json.dump(details, f, indent=2, sort_keys=True)
 
         index_entries.append({
             "id": flow_id,
@@ -115,6 +179,11 @@ def backup_all_flows(
             "type": details.get("type"),
         })
 
+    for entry in index_entries:
+        filepath = run_dir / entry["filename"]
+        content = filepath.read_bytes()
+        entry["hash"] = hashlib.sha256(content).hexdigest()
+
     index_path = run_dir / "_index.json"
     with index_path.open("w", encoding="utf-8") as f:
         json.dump({
@@ -123,6 +192,51 @@ def backup_all_flows(
         }, f, indent=2)
 
     return run_dir
+
+
+def verify_backups(snapshot_dir: Optional[Union[str, Path]] = None) -> dict:
+    """
+    Verify all workflow backups against their stored SHA-256 hashes.
+
+    Args:
+        snapshot_dir: Directory containing snapshots. Defaults to ./snapshots/.
+
+    Returns:
+        Dict with 'verified', 'failed', and 'missing' lists of filenames.
+    """
+    if snapshot_dir is None:
+        snapshot_path = Path.cwd() / "snapshots"
+    else:
+        snapshot_path = Path(snapshot_dir)
+
+    index_path = snapshot_path / "_index.json"
+    if not index_path.exists():
+        raise FileNotFoundError(f"Index file not found: {index_path}")
+
+    with index_path.open("r", encoding="utf-8") as f:
+        index = json.load(f)
+
+    results: dict = {"verified": [], "failed": [], "missing": []}
+
+    for flow in index.get("flows", []):
+        filename = flow.get("filename")
+        expected_hash = flow.get("hash")
+
+        if not filename or not expected_hash:
+            continue
+
+        filepath = snapshot_path / filename
+        if not filepath.exists():
+            results["missing"].append(filename)
+            continue
+
+        actual_hash = hashlib.sha256(filepath.read_bytes()).hexdigest()
+        if actual_hash == expected_hash:
+            results["verified"].append(filename)
+        else:
+            results["failed"].append(filename)
+
+    return results
 
 
 def main() -> None:
@@ -145,6 +259,11 @@ def main() -> None:
         "--use-date-prefix",
         action="store_true",
         help="Prefix each workflow filename with a timestamp"
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify backup integrity after completion"
     )
     args = parser.parse_args()
 
@@ -175,6 +294,21 @@ def main() -> None:
 
     print(f"\nBackup complete.")
     print(f"Files saved to: {run_dir}")
+
+    if args.verify:
+        print("\nVerifying backup integrity...")
+        results = verify_backups(run_dir)
+        print(f"  Verified: {len(results['verified'])}")
+        if results["failed"]:
+            print(f"  Failed: {len(results['failed'])}")
+            for f in results["failed"]:
+                print(f"    - {f}")
+            sys.exit(1)
+        if results["missing"]:
+            print(f"  Missing: {len(results['missing'])}")
+            for f in results["missing"]:
+                print(f"    - {f}")
+        print("All backups verified successfully.")
 
 
 if __name__ == "__main__":

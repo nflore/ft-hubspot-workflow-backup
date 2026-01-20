@@ -1,5 +1,7 @@
 # HubSpot Workflow Backup & Restore
 
+[![PyPI](https://img.shields.io/pypi/v/ft-hubspot-workflow-backup)](https://pypi.org/project/ft-hubspot-workflow-backup/)
+
 Backup and restore HubSpot Automation (v4) workflows. There is NO confirmation once you request a restore, it will just overwrite the workflow.
 
 ## Installation

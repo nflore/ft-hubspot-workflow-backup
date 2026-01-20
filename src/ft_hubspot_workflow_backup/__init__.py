@@ -2,7 +2,7 @@ from .client import HubSpotClient
 from .backup import backup_all_flows, get_timestamp, slugify
 from .restore import restore_flow
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "HubSpotClient",

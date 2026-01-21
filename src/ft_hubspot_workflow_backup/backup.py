@@ -38,8 +38,22 @@ def get_filter_branch_sort_key(branch: dict) -> tuple:
     return ("", "", "")
 
 
-def sort_filters(obj: dict | list) -> dict | list:
-    """Recursively sort filters and filter branches for consistent output."""
+def get_action_sort_key(action: dict) -> tuple:
+    """Get a sort key for an action based on actionId, actionTypeId, and type."""
+    raw_id = action.get("actionId")
+    try:
+        num_id = int(raw_id) if raw_id is not None else 0
+    except (TypeError, ValueError):
+        num_id = 0
+    return (
+        num_id,
+        action.get("actionTypeId", ""),
+        action.get("type", ""),
+    )
+
+
+def normalize_structure(obj: dict | list) -> dict | list:
+    """Recursively sort filters, filter branches, and actions for consistent output."""
     if isinstance(obj, dict):
         for key, value in obj.items():
             if key == "filters" and isinstance(value, list):
@@ -48,13 +62,24 @@ def sort_filters(obj: dict | list) -> dict | list:
                 value, list
             ):
                 for branch in value:
-                    sort_filters(branch)
+                    normalize_structure(branch)
                 obj[key] = sorted(value, key=get_filter_branch_sort_key)
+            elif key in (
+                "eventFilterBranches",
+                "listMembershipFilterBranches",
+            ) and isinstance(value, list):
+                for branch in value:
+                    normalize_structure(branch)
+                obj[key] = sorted(value, key=get_filter_branch_sort_key)
+            elif key == "actions" and isinstance(value, list):
+                for action in value:
+                    normalize_structure(action)
+                obj[key] = sorted(value, key=get_action_sort_key)
             else:
-                sort_filters(value)
+                normalize_structure(value)
     elif isinstance(obj, list):
         for item in obj:
-            sort_filters(item)
+            normalize_structure(item)
     return obj
 
 
@@ -69,7 +94,7 @@ def normalize_flow(flow: dict) -> dict:
                 ds.get("name", ""),
             ),
         )
-    sort_filters(flow)
+    normalize_structure(flow)
     return flow
 
 
@@ -178,6 +203,8 @@ def backup_all_flows(
             "flowType": details.get("flowType"),
             "type": details.get("type"),
         })
+
+    index_entries.sort(key=lambda e: (e["id"], e["name"], e["filename"]))
 
     for entry in index_entries:
         filepath = run_dir / entry["filename"]
